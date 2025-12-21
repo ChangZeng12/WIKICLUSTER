@@ -16,6 +16,7 @@ Wikicluster is an interactive web application that visualizes the relationships 
 ## 🛠️ Tech Stack
 
 -   **Frontend**: React 19, TypeScript
+-   **Build Tool**: Vite
 -   **Visualization**: D3.js (v7)
 -   **Styling**: Tailwind CSS
 -   **Icons**: Phosphor Icons
@@ -42,35 +43,30 @@ Make sure you have Node.js installed on your machine.
 
 3.  Start the development server:
     ```bash
-    npm start
+    npm run dev
     ```
 
-4.  Open your browser and navigate to `http://localhost:3000` (or whatever port your bundler uses).
+4.  Open your browser and navigate to the local URL provided by Vite (usually `http://localhost:5173`).
 
 ## 🚢 Deployment (GitHub Pages)
 
-To deploy this project to GitHub Pages:
+This project is configured for seamless deployment to GitHub Pages using a custom script that handles cache cleaning.
 
 1.  **Configure Base URL**: The project is already configured with `base: './'` in `vite.config.ts`, which supports relative paths.
-2.  **Install Deployment Tool**:
-    ```bash
-    npm install gh-pages --save-dev
-    ```
-3.  **Update `package.json`**:
-    Add the following scripts and your homepage URL (replace `username` and `repo-name`):
+2.  **Update `package.json`**:
+    Ensure your `homepage` field matches your GitHub URL:
     ```json
     {
       "homepage": "https://username.github.io/repo-name/",
-      "scripts": {
-        "predeploy": "npm run build",
-        "deploy": "gh-pages -d dist"
-      }
+      ...
     }
     ```
-4.  **Deploy**:
+3.  **Deploy**:
+    Run the following command to build and deploy:
     ```bash
     npm run deploy
     ```
+    *Note: The deploy script (`rm -rf node_modules/.cache/gh-pages && gh-pages -d dist`) automatically clears the gh-pages cache before deploying to prevent "branch already exists" errors.*
 
 ## 📖 Usage
 
