@@ -74,4 +74,4 @@ This project is open source.
 
 ---
 
-**Designed by [Chang Zeng](https://changz12.com/)**
+**Designed by [Chang Zeng](https://changz12.com/) in Figma. Code generation assisted by Google Gemini 3.**

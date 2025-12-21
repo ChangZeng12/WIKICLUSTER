@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 interface KnobControlProps {
@@ -15,7 +16,7 @@ export const KnobControl: React.FC<KnobControlProps> = ({ value, min, max, step,
   const knobRef = useRef<HTMLDivElement>(null);
 
   // Configuration
-  const startAngle = -140;
+  const startAngle = -140; // SVG degrees
   const endAngle = 140;
   
   // Geometry
@@ -36,6 +37,7 @@ export const KnobControl: React.FC<KnobControlProps> = ({ value, min, max, step,
   const totalSteps = Math.floor((max - min) / step);
 
   // Value to Angle Conversion
+  // Maps linear range [min, max] to radial range [startAngle, endAngle]
   const valueToAngle = (val: number) => {
     const effectiveVal = val >= 2000 ? max : val;
     const clamped = Math.min(Math.max(effectiveVal, min), max);
@@ -46,7 +48,7 @@ export const KnobControl: React.FC<KnobControlProps> = ({ value, min, max, step,
 
   const currentAngle = valueToAngle(value);
 
-  // Calculate Value from Mouse Position
+  // Calculate Value from Mouse Position using ArcTangent (Math.atan2)
   const calculateValueFromPointer = (clientX: number, clientY: number) => {
     if (!knobRef.current) return value;
     const rect = knobRef.current.getBoundingClientRect();
@@ -73,6 +75,7 @@ export const KnobControl: React.FC<KnobControlProps> = ({ value, min, max, step,
     const valueRange = max - min;
     const rawValue = min + ((clampedAngle - startAngle) / angleRange) * valueRange;
     
+    // Snap to nearest step
     const steppedValue = Math.round(rawValue / step) * step;
     return Math.min(Math.max(steppedValue, min), max);
   };
@@ -244,7 +247,7 @@ export const KnobControl: React.FC<KnobControlProps> = ({ value, min, max, step,
                     cx={center} 
                     cy={center} 
                     r={knobRadius} 
-                    fill="white" 
+                    fill="#fafaf9" 
                     stroke="black" 
                     strokeWidth="1"
                     className="cursor-grab active:cursor-grabbing"

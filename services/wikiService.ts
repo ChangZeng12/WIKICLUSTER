@@ -3,6 +3,7 @@ import { WikiAPIResponse, GraphData, WikiNode, WikiLink } from '../types';
 
 const WIKI_API_URL = 'https://en.wikipedia.org/w/api.php';
 
+// Namespaces to exclude to ensure we only get actual articles (NS 0 mostly)
 const EXCLUDED_NAMESPACES = new Set([
   'User', 'Talk', 'Template', 'Wikipedia', 'File', 'Image', 
   'MediaWiki', 'Help', 'Category', 'Portal', 'Book', 'Draft', 
@@ -11,6 +12,7 @@ const EXCLUDED_NAMESPACES = new Set([
 
 /**
  * Extracts the title from a standard Wikipedia URL.
+ * Example: https://en.wikipedia.org/wiki/React_(software) -> React (software)
  */
 export const extractTitleFromUrl = (url: string): string | null => {
   try {
@@ -28,6 +30,7 @@ export const extractTitleFromUrl = (url: string): string | null => {
 
 /**
  * Helper to normalize wiki titles for deduplication.
+ * Replaces underscores with spaces and capitalizes the first letter.
  */
 const normalizeTitle = (title: string): string => {
   let t = title.trim().replace(/_/g, ' ');
@@ -39,6 +42,7 @@ const normalizeTitle = (title: string): string => {
 
 /**
  * Checks if a title belongs to an excluded namespace.
+ * E.g., "File:Image.jpg" or "Category:Physics" will return true.
  */
 const isExcludedNamespace = (title: string): boolean => {
   const parts = title.split(':');
@@ -55,6 +59,9 @@ const isExcludedNamespace = (title: string): boolean => {
 
 /**
  * Fetches links for a specific Wikipedia page title.
+ * 1. Calls MediaWiki API.
+ * 2. Parses the content for [[Link]] syntax to ensure connection context.
+ * 3. Returns GraphData with a central 'main' node and satellite 'sub' nodes.
  */
 export const fetchWikiLinks = async (title: string, maxLinks: number = 150): Promise<GraphData> => {
   const params = new URLSearchParams({
@@ -79,6 +86,7 @@ export const fetchWikiLinks = async (title: string, maxLinks: number = 150): Pro
   const pages = data.query?.pages;
   if (!pages) throw new Error('No pages found');
 
+  // API returns pages keyed by ID, take the first one
   const pageId = Object.keys(pages)[0];
   const pageData = pages[pageId];
 
@@ -95,12 +103,15 @@ export const fetchWikiLinks = async (title: string, maxLinks: number = 150): Pro
   }
 
   // --- EXTRACT UNIQUE LINKS ONLY ---
+  // Using Regex to parse raw Wikitext source code for [[Link]] pattern.
+  // This is often more reliable for finding contextually relevant links than the 'links' prop of the API.
   const linkRegex = /\[\[([^|\]#\n]+)(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]/g;
   const uniqueLinks = new Set<string>();
   let match;
 
   while ((match = linkRegex.exec(content)) !== null) {
       const normalizedTarget = normalizeTitle(match[1]);
+      // Avoid self-links and unwanted namespaces
       if (normalizedTarget !== canonicalTitle && !isExcludedNamespace(normalizedTarget)) {
           uniqueLinks.add(normalizedTarget);
       }
@@ -111,6 +122,7 @@ export const fetchWikiLinks = async (title: string, maxLinks: number = 150): Pro
     finalLinkList = finalLinkList.slice(0, maxLinks);
   }
 
+  // Construct the central node (Main Node)
   const centerNode: WikiNode = {
     id: canonicalTitle,
     group: 'main',
@@ -118,12 +130,14 @@ export const fetchWikiLinks = async (title: string, maxLinks: number = 150): Pro
     description: description,
   };
 
+  // Construct child nodes (Sub Nodes)
   const childNodes: WikiNode[] = finalLinkList.map(linkTitle => ({
     id: linkTitle,
     group: 'sub',
     url: `https://en.wikipedia.org/wiki/${encodeURIComponent(linkTitle)}`,
   }));
 
+  // Create links from center to children
   const links: WikiLink[] = childNodes.map(child => ({
     source: centerNode.id,
     target: child.id,

@@ -6,18 +6,26 @@ import { fetchWikiLinks } from './services/wikiService';
 import { GraphData, WikiNode, WikiLink } from './types';
 
 function App() {
+  // Graph Data State
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
+  
+  // UI State
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const [linkLimit, setLinkLimit] = useState<number>(150);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [showSubNodes, setShowSubNodes] = useState<boolean>(true);
-  const [resetViewTrigger, setResetViewTrigger] = useState(0);
+  
+  // Interaction State
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null); // For camera centering
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null); // For highlighting
+  
+  // Settings
+  const [linkLimit, setLinkLimit] = useState<number>(150); // Max sub-nodes per fetch
+  const [searchTerm, setSearchTerm] = useState<string>(''); // Current sidebar input filter
+  const [showSubNodes, setShowSubNodes] = useState<boolean>(true); // Toggle visibility of white nodes
+  const [resetViewTrigger, setResetViewTrigger] = useState(0); // Counter to trigger D3 zoom reset
   
   const [dimensions, setDimensions] = useState({ width: window.innerWidth - 300, height: window.innerHeight });
 
+  // Handle Window Resize
   useEffect(() => {
     const handleResize = () => {
       setDimensions({ width: window.innerWidth - 300, height: window.innerHeight });
@@ -26,6 +34,11 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  /**
+   * Handles clicking a node in the graph.
+   * - If 'main': Focus/Center on it.
+   * - If 'sub': Fetch data for it, convert to 'main', and add its children.
+   */
   const handleNodeClick = useCallback(async (node: WikiNode | null) => {
     if (!node) {
       setFocusedNodeId(null);
@@ -37,15 +50,18 @@ function App() {
       return;
     }
 
+    // --- Expanding a Sub Node ---
     if (node.group === 'sub') {
       setIsLoading(true);
       try {
         const newData = await fetchWikiLinks(node.id, linkLimit);
         
         setGraphData(prevData => {
+          // Map for efficient lookup and deduplication
           const nodeMap = new Map<string, WikiNode>();
           prevData.nodes.forEach(n => nodeMap.set(n.id, n));
           
+          // Upgrade the clicked node from sub -> main
           const expandingNode = nodeMap.get(node.id);
           if (expandingNode) {
             expandingNode.group = 'main';
@@ -54,9 +70,11 @@ function App() {
             }
           }
           
+          // Add new children (sub-nodes)
           const newChildren = newData.nodes.slice(1);
           newChildren.forEach(child => {
             if (!nodeMap.has(child.id)) {
+              // Set initial position near parent for smooth animation
               if (expandingNode && expandingNode.x !== undefined && expandingNode.y !== undefined) {
                  child.x = expandingNode.x + (Math.random() - 0.5) * 50;
                  child.y = expandingNode.y + (Math.random() - 0.5) * 50;
@@ -66,9 +84,11 @@ function App() {
             }
           });
 
+          // Rebuild Links
           const linkMap = new Map<string, WikiLink>();
           const getLinkId = (s: string, t: string) => `${s}->${t}`;
 
+          // Keep existing valid links
           prevData.links.forEach(l => {
              const sid = (typeof l.source === 'object') ? l.source.id : l.source as string;
              const tid = (typeof l.target === 'object') ? l.target.id : l.target as string;
@@ -77,6 +97,7 @@ function App() {
              }
           });
 
+          // Add new links from the API response
           newData.links.forEach(l => {
              const targetId = (typeof l.target === 'object') ? (l.target as WikiNode).id : l.target as string;
              if (nodeMap.has(targetId)) {
@@ -87,6 +108,7 @@ function App() {
              }
           });
 
+          // Check for connections between the new main node and EXISTING main nodes
           nodeMap.forEach((potentialTarget) => {
              if (potentialTarget.group === 'main' && potentialTarget.id !== node.id) {
                 if (newData.nodes.some(n => n.id === potentialTarget.id)) {
@@ -110,10 +132,16 @@ function App() {
     }
   }, [linkLimit]);
 
+  /**
+   * Handles Search Input from Sidebar.
+   * - If node exists: Focus/Expand it.
+   * - If new: Fetch from API and create new cluster.
+   */
   const handleSearchSubmit = useCallback(async (input: string) => {
     const rawInput = input.trim().replace(/\s+/g, '_');
     if (!rawInput) return;
 
+    // Check if exists in graph already
     const existingNode = graphData.nodes.find(n => n.id.toLowerCase() === rawInput.toLowerCase().replace(/_/g, ' '));
     if (existingNode) {
         if (existingNode.group === 'sub') handleNodeClick(existingNode);
@@ -142,6 +170,7 @@ function App() {
 
          if (existingCanonical) {
              centerNode = existingCanonical;
+             // Upgrade if it was sub
              if (centerNode.group === 'sub') {
                  centerNode.group = 'main';
                  centerNode.description = newMainNode.description;
@@ -149,6 +178,7 @@ function App() {
          } else {
              centerNode = newMainNode;
              centerNode.group = 'main';
+             // Random start position if not first node
              if (prevData.nodes.length > 0) {
                  centerNode.x = (Math.random() - 0.5) * 200;
                  centerNode.y = (Math.random() - 0.5) * 200;
@@ -156,6 +186,7 @@ function App() {
              nodeMap.set(centerNode.id, centerNode);
          }
 
+         // Add children
          data.nodes.slice(1).forEach(child => {
             if (!nodeMap.has(child.id)) {
                 if (centerNode.x !== undefined) {
@@ -167,9 +198,11 @@ function App() {
             }
          });
 
+         // Rebuild Links
          const linkMap = new Map<string, WikiLink>();
          const getLinkId = (s: string, t: string) => `${s}->${t}`;
 
+         // Preserve old links
          prevData.links.forEach(l => {
             const sid = (typeof l.source === 'object') ? l.source.id : l.source as string;
             const tid = (typeof l.target === 'object') ? l.target.id : l.target as string;
@@ -178,6 +211,7 @@ function App() {
             }
          });
 
+         // Add new links
          data.links.forEach(l => {
             const targetId = (typeof l.target === 'object') ? (l.target as WikiNode).id : l.target as string;
             if (nodeMap.has(targetId)) {
@@ -186,6 +220,7 @@ function App() {
             }
          });
 
+         // Connect new main node to existing main nodes if related
          nodeMap.forEach((potentialTarget) => {
              if (potentialTarget.group === 'main' && potentialTarget.id !== centerNode.id) {
                  if (data.nodes.some(n => n.id === potentialTarget.id)) {
@@ -214,11 +249,19 @@ function App() {
     setSearchTerm('');
   }, []);
 
+  /**
+   * Deletes a node.
+   * If a Main node is deleted, it might downgrade its children back to 'sub' nodes
+   * or remove them if they are not connected to any other Main node.
+   */
   const handleDeleteNode = useCallback((nodeId: string) => {
     setGraphData(prevData => {
       const targetNode = prevData.nodes.find(n => n.id === nodeId);
       if (!targetNode) return prevData;
+
+      // Identify other main nodes to see if we need to keep connections
       const otherMainNodeIds = new Set(prevData.nodes.filter(n => n.group === 'main' && n.id !== nodeId).map(n => n.id));
+      
       const isConnectedToOtherMain = prevData.links.some(l => {
         const sid = typeof l.source === 'object' ? l.source.id : l.source as string;
         const tid = typeof l.target === 'object' ? l.target.id : l.target as string;
@@ -226,13 +269,22 @@ function App() {
         if (tid === nodeId) return otherMainNodeIds.has(sid);
         return false;
       });
+
+      // If a main node is connected to another main node, we might just want to demote it to 'sub' instead of deleting
       const shouldDemote = targetNode.group === 'main' && isConnectedToOtherMain;
+      
+      // Filter out the node (unless demoting)
       const candidateNodes = prevData.nodes.map(n => n.id === nodeId ? (shouldDemote ? { ...n, group: 'sub' as const } : null) : n).filter((n): n is WikiNode => n !== null);
+      
       const nodeMap = new Map<string, WikiNode>();
       candidateNodes.forEach(n => nodeMap.set(n.id, n));
+      
       const currentMainNodeIds = new Set(candidateNodes.filter(n => n.group === 'main').map(n => n.id));
+      
+      // Cleanup: Remove nodes that are no longer connected to ANY main node
       const finalNodes = candidateNodes.filter(n => {
         if (n.group === 'main') return true;
+        // Check if this sub-node has a link to a main node
         return prevData.links.some(l => {
           const sid = typeof l.source === 'object' ? l.source.id : l.source as string;
           const tid = typeof l.target === 'object' ? l.target.id : l.target as string;
@@ -241,7 +293,10 @@ function App() {
           return false;
         });
       });
+
       const finalNodeIds = new Set(finalNodes.map(n => n.id));
+      
+      // Cleanup Links
       const finalLinks = prevData.links.map(l => ({
           source: typeof l.source === 'object' ? l.source.id : l.source as string,
           target: typeof l.target === 'object' ? l.target.id : l.target as string,
@@ -250,8 +305,10 @@ function App() {
             if (!finalNodeIds.has(l.source) || !finalNodeIds.has(l.target)) return false;
             const s = nodeMap.get(l.source);
             const t = nodeMap.get(l.target);
+            // Only keep links where at least one end is a Main node (or two main nodes)
             return s?.group === 'main' || t?.group === 'main';
         });
+
       return { nodes: finalNodes, links: finalLinks };
     });
   }, []);
