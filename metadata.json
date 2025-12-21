@@ -1,0 +1,5 @@
+{
+  "name": "wikicluster",
+  "description": "A minimalist, brutalist visualization of Wikipedia connections using D3 force-directed graphs.",
+  "requestFramePermissions": []
+}
