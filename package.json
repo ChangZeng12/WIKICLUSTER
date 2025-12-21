@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "rm -rf node_modules/.cache/gh-pages && gh-pages -d dist"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
