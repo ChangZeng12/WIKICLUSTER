@@ -51,8 +51,8 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     
     // Filter links to ensure both endpoints are visible
     const visibleLinks = data.links.filter(l => {
-        const sid = typeof l.source === 'object' ? l.source.id : l.source as string;
-        const tid = typeof l.target === 'object' ? l.target.id : l.target as string;
+        const sid = typeof l.source === 'object' ? (l.source as WikiNode).id : l.source as string;
+        const tid = typeof l.target === 'object' ? (l.target as WikiNode).id : l.target as string;
         return visibleNodeIds.has(sid) && visibleNodeIds.has(tid);
     });
 
@@ -109,8 +109,8 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     // --- Force Simulation Configuration ---
     const simulation = d3.forceSimulation<WikiNode>(visibleNodes)
       .force("link", d3.forceLink<WikiNode, WikiLink>(visibleLinks)
-        .id(d => d.id)
-        .distance((d) => {
+        .id((d) => d.id)
+        .distance((d: WikiLink) => {
            const source = d.source as WikiNode;
            const target = d.target as WikiNode;
            // Main-to-Main connections are longer to separate clusters
@@ -121,9 +121,9 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
         })
       )
       .force("charge", d3.forceManyBody<WikiNode>()
-        .strength((d) => d.group === 'main' ? -1500 : -250) // Stronger repulsion for main nodes
+        .strength((d: WikiNode) => d.group === 'main' ? -1500 : -250) // Stronger repulsion for main nodes
       )
-      .force("collide", d3.forceCollide<WikiNode>().radius((d) => d.group === 'main' ? 50 : 18)) // Prevent overlap
+      .force("collide", d3.forceCollide<WikiNode>().radius((d: WikiNode) => d.group === 'main' ? 50 : 18)) // Prevent overlap
       .force("x", d3.forceX(0).strength(0.01)) // Gentle gravity to center
       .force("y", d3.forceY(0).strength(0.01));
 
@@ -136,26 +136,26 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     // --- Drawing Links ---
     const link = g.append("g")
       .attr("class", "links")
-      .selectAll("line")
+      .selectAll<SVGLineElement, WikiLink>("line")
       .data(visibleLinks)
       .enter().append("line")
-      .attr("id", d => {
-        const s = typeof d.source === 'object' ? d.source.id : d.source;
-        const t = typeof d.target === 'object' ? d.target.id : d.target;
+      .attr("id", (d: WikiLink) => {
+        const s = typeof d.source === 'object' ? (d.source as WikiNode).id : d.source as string;
+        const t = typeof d.target === 'object' ? (d.target as WikiNode).id : d.target as string;
         return `link-${s}-${t}`; 
       })
       .attr("stroke", "#000")
-      .attr("stroke-opacity", d => isMainConnection(d) ? 0.6 : 0.1) 
-      .attr("stroke-width", d => isMainConnection(d) ? 2 : 0.5);
+      .attr("stroke-opacity", (d: WikiLink) => isMainConnection(d) ? 0.6 : 0.1) 
+      .attr("stroke-width", (d: WikiLink) => isMainConnection(d) ? 2 : 0.5);
 
     // --- Drawing Nodes ---
     const nodeGroup = g.append("g")
       .attr("class", "nodes")
-      .selectAll("g")
+      .selectAll<SVGGElement, WikiNode>("g")
       .data(visibleNodes)
       .enter().append("g")
       .attr("class", "node-group")
-      .attr("id", d => `node-${d.id.replace(/\s+/g, '-')}`) 
+      .attr("id", (d: WikiNode) => `node-${d.id.replace(/\s+/g, '-')}`) 
       .attr("cursor", "pointer")
       .call(d3.drag<SVGGElement, WikiNode>()
         .on("start", dragstarted)
@@ -166,7 +166,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     // Node Ring (Highlight indicator)
     nodeGroup.append("circle")
       .attr("class", "node-ring")
-      .attr("r", d => d.group === 'main' ? 20 : 0)
+      .attr("r", (d: WikiNode) => d.group === 'main' ? 20 : 0)
       .attr("fill", "#fafaf9") 
       .attr("stroke", "#000")
       .attr("stroke-width", 3)
@@ -175,36 +175,36 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     // Node Core (Visible circle)
     nodeGroup.append("circle")
       .attr("class", "node-core")
-      .attr("r", d => d.group === 'main' ? 12 : 5)
-      .attr("fill", d => d.group === 'main' ? "#000" : "#fff") 
+      .attr("r", (d: WikiNode) => d.group === 'main' ? 12 : 5)
+      .attr("fill", (d: WikiNode) => d.group === 'main' ? "#000" : "#fff") 
       .attr("stroke", "#000")
-      .attr("stroke-width", d => d.group === 'main' ? 0 : 1.5);
+      .attr("stroke-width", (d: WikiNode) => d.group === 'main' ? 0 : 1.5);
 
     const initialK = currentTransformRef.current ? currentTransformRef.current.k : 0.5;
 
     // --- Drawing Labels ---
     const label = g.append("g")
       .attr("class", "labels")
-      .selectAll("text")
+      .selectAll<SVGTextElement, WikiNode>("text")
       .data(visibleNodes)
       .enter().append("text")
       .attr("class", "node-label")
-      .text(d => d.id)
+      .text((d: WikiNode) => d.id)
       .attr("text-anchor", "middle")
       .attr("font-family", "JetBrains Mono, monospace")
-      .attr("font-weight", d => d.group === 'main' ? "bold" : "normal")
+      .attr("font-weight", (d: WikiNode) => d.group === 'main' ? "bold" : "normal")
       .attr("fill", "#000")
       .attr("pointer-events", "none") 
-      .attr("font-size", d => {
+      .attr("font-size", (d: WikiNode) => {
         const size = d.group === 'main' ? 12 : 10;
         return `${size / initialK}px`;
       })
-      .attr("dy", d => d.group === 'main' ? 14 + (10 / initialK) : 7 + (8 / initialK))
-      .attr("opacity", d => d.group === 'main' ? 1 : (initialK > 1.2 ? 1 : 0));
+      .attr("dy", (d: WikiNode) => d.group === 'main' ? 14 + (10 / initialK) : 7 + (8 / initialK))
+      .attr("opacity", (d: WikiNode) => d.group === 'main' ? 1 : (initialK > 1.2 ? 1 : 0));
 
     // --- Event Listeners ---
     nodeGroup
-      .on("mouseover", (event, d) => {
+      .on("mouseover", (event, d: WikiNode) => {
         setTooltipState({
             x: event.clientX,
             y: event.clientY,
@@ -217,7 +217,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
          setTooltipState(prev => ({ ...prev, visible: false }));
          if (onNodeHover) onNodeHover(null);
       })
-      .on("click", (event, d) => {
+      .on("click", (event, d: WikiNode) => {
           event.stopPropagation();
           onNodeClick(d);
       });
@@ -225,28 +225,28 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     // --- Simulation Tick (Animation Loop) ---
     simulation.on("tick", () => {
       link
-        .attr("x1", d => (d.source as WikiNode).x!)
-        .attr("y1", d => (d.source as WikiNode).y!)
-        .attr("x2", d => (d.target as WikiNode).x!)
-        .attr("y2", d => (d.target as WikiNode).y!);
+        .attr("x1", (d: WikiLink) => (d.source as WikiNode).x!)
+        .attr("y1", (d: WikiLink) => (d.source as WikiNode).y!)
+        .attr("x2", (d: WikiLink) => (d.target as WikiNode).x!)
+        .attr("y2", (d: WikiLink) => (d.target as WikiNode).y!);
 
-      nodeGroup.attr("transform", d => `translate(${d.x!},${d.y!})`);
-      label.attr("x", d => d.x!).attr("y", d => d.y!);
+      nodeGroup.attr("transform", (d: WikiNode) => `translate(${d.x!},${d.y!})`);
+      label.attr("x", (d: WikiNode) => d.x!).attr("y", (d: WikiNode) => d.y!);
     });
 
     // --- Drag Handlers ---
-    function dragstarted(event: any, d: WikiNode) {
+    function dragstarted(event: d3.D3DragEvent<SVGGElement, WikiNode, WikiNode>, d: WikiNode) {
       if (!event.active) simulation.alphaTarget(0.3).restart();
       d.fx = d.x;
       d.fy = d.y;
     }
 
-    function dragged(event: any, d: WikiNode) {
+    function dragged(event: d3.D3DragEvent<SVGGElement, WikiNode, WikiNode>, d: WikiNode) {
       d.fx = event.x;
       d.fy = event.y;
     }
 
-    function dragended(event: any, d: WikiNode) {
+    function dragended(event: d3.D3DragEvent<SVGGElement, WikiNode, WikiNode>, d: WikiNode) {
       if (!event.active) simulation.alphaTarget(0);
       d.fx = null;
       d.fy = null;
@@ -264,8 +264,8 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       if (visibleNodes.length === 0) return;
       
       // Calculate bounding box of all nodes
-      const xExtent = d3.extent(visibleNodes, d => d.x) as [number, number];
-      const yExtent = d3.extent(visibleNodes, d => d.y) as [number, number];
+      const xExtent = d3.extent(visibleNodes, (d: WikiNode) => d.x) as [number, number];
+      const yExtent = d3.extent(visibleNodes, (d: WikiNode) => d.y) as [number, number];
       if (xExtent[0] === undefined || yExtent[0] === undefined) return;
       
       const padding = 100;
@@ -315,22 +315,22 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     };
 
     // Animate Node Rings
-    nodeRings.transition().duration(200).attr("opacity", d => (isNodeHighlighted(d.id) && d.group === 'main') ? 1 : 0);
+    nodeRings.transition().duration(200).attr("opacity", (d: WikiNode) => (isNodeHighlighted(d.id) && d.group === 'main') ? 1 : 0);
     
     // Scale Node Cores
     nodeCores.transition().duration(200)
-      .attr("r", d => isNodeHighlighted(d.id) ? (d.group === 'main' ? 12 : 9) : (d.group === 'main' ? 12 : 5))
-      .attr("stroke-width", d => isNodeHighlighted(d.id) ? (d.group === 'main' ? 0 : 3) : (d.group === 'main' ? 0 : 1.5));
+      .attr("r", (d: WikiNode) => isNodeHighlighted(d.id) ? (d.group === 'main' ? 12 : 9) : (d.group === 'main' ? 12 : 5))
+      .attr("stroke-width", (d: WikiNode) => isNodeHighlighted(d.id) ? (d.group === 'main' ? 0 : 3) : (d.group === 'main' ? 0 : 1.5));
 
     // Highlight Links connected to hovered node
     links.transition().duration(200)
-      .attr("stroke-opacity", d => {
+      .attr("stroke-opacity", (d: WikiLink) => {
           const s = d.source as WikiNode;
           const t = d.target as WikiNode;
           if (s.id === hoveredNodeId || t.id === hoveredNodeId) return 1;
           return isMainConnection(d) ? 0.6 : 0.1;
       })
-      .attr("stroke-width", d => {
+      .attr("stroke-width", (d: WikiLink) => {
           const s = d.source as WikiNode;
           const t = d.target as WikiNode;
           if (s.id === hoveredNodeId || t.id === hoveredNodeId) return 3;

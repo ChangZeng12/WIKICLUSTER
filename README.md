@@ -47,6 +47,31 @@ Make sure you have Node.js installed on your machine.
 
 4.  Open your browser and navigate to `http://localhost:3000` (or whatever port your bundler uses).
 
+## 🚢 Deployment (GitHub Pages)
+
+To deploy this project to GitHub Pages:
+
+1.  **Configure Base URL**: The project is already configured with `base: './'` in `vite.config.ts`, which supports relative paths.
+2.  **Install Deployment Tool**:
+    ```bash
+    npm install gh-pages --save-dev
+    ```
+3.  **Update `package.json`**:
+    Add the following scripts and your homepage URL (replace `username` and `repo-name`):
+    ```json
+    {
+      "homepage": "https://username.github.io/repo-name/",
+      "scripts": {
+        "predeploy": "npm run build",
+        "deploy": "gh-pages -d dist"
+      }
+    }
+    ```
+4.  **Deploy**:
+    ```bash
+    npm run deploy
+    ```
+
 ## 📖 Usage
 
 1.  **Search**: Enter a topic in the top-left search bar (e.g., "Physics", "React (software)").
