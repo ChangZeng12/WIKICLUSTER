@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { NetworkGraph } from './components/NetworkGraph';
 import { Sidebar } from './components/Sidebar';
+import { MobileControls } from './components/MobileControls';
+import { Logo } from './components/Logo';
 import { fetchWikiLinks } from './services/wikiService';
 import { GraphData, WikiNode, WikiLink } from './types';
 
@@ -23,13 +25,17 @@ function App() {
   const [showSubNodes, setShowSubNodes] = useState<boolean>(true); // Toggle visibility of white nodes
   const [resetViewTrigger, setResetViewTrigger] = useState(0); // Counter to trigger D3 zoom reset
   
-  const [dimensions, setDimensions] = useState({ width: window.innerWidth - 300, height: window.innerHeight });
+  const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   // Handle Window Resize
   useEffect(() => {
     const handleResize = () => {
-      setDimensions({ width: window.innerWidth - 300, height: window.innerHeight });
+        // On mobile, we use full width. On desktop, subtract sidebar width (300px).
+        const sidebarWidth = window.innerWidth >= 768 ? 300 : 0;
+        setDimensions({ width: window.innerWidth - sidebarWidth, height: window.innerHeight });
     };
+    // Initial call
+    handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -314,8 +320,10 @@ function App() {
   }, []);
 
   return (
-    <div className="flex w-screen h-screen overflow-hidden bg-stone-50">
-      <div className="w-[300px] flex-shrink-0 h-full">
+    <div className="flex w-screen h-screen overflow-hidden bg-stone-50 relative">
+      
+      {/* Desktop Sidebar: Hidden on Mobile */}
+      <div className="hidden md:flex w-[300px] flex-shrink-0 h-full">
          <Sidebar 
             onSearchSubmit={handleSearchSubmit}
             isLoading={isLoading}
@@ -334,15 +342,25 @@ function App() {
             onSearchTermChange={setSearchTerm}
             showSubNodes={showSubNodes}
             onToggleSubNodes={() => setShowSubNodes(!showSubNodes)}
-            onResetView={() => setResetViewTrigger(prev => prev + 1)}
+            onResetView={() => {
+                setResetViewTrigger(prev => prev + 1);
+                setFocusedNodeId(null);
+            }}
          />
       </div>
+
       <div className="flex-1 h-full relative">
+        {/* Mobile Logo Overlay: Hidden on Desktop */}
+        <div className="absolute top-6 left-6 z-10 pointer-events-none opacity-25 md:hidden">
+            <Logo />
+        </div>
+
         {graphData.nodes.length > 0 ? (
           <NetworkGraph 
             data={graphData} width={dimensions.width} height={dimensions.height} 
             onNodeClick={handleNodeClick} focusedNodeId={focusedNodeId} hoveredNodeId={hoveredNodeId}
             onNodeHover={setHoveredNodeId} searchTerm={searchTerm} showSubNodes={showSubNodes} resetViewTrigger={resetViewTrigger}
+            onInteraction={() => setFocusedNodeId(null)}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
@@ -351,7 +369,9 @@ function App() {
             </div>
           </div>
         )}
-        <div className="absolute bottom-4 left-6 flex flex-col items-start gap-1 pointer-events-none z-0">
+        
+        {/* Footer text (Hidden on mobile if it overlaps heavily, but keeping standard layout) */}
+        <div className="hidden md:flex absolute bottom-4 left-6 flex-col items-start gap-1 pointer-events-none z-0">
            <span className="text-[8px] font-mono opacity-40 uppercase">
               DESIGNED BY <a href="https://changz12.com/" target="_blank" rel="noopener noreferrer" className="underline pointer-events-auto hover:text-black">CHANG ZENG</a> WITH FIGMA AND GEMINI // <a href="https://changz12.com/" target="_blank" rel="noopener noreferrer" className="underline pointer-events-auto hover:text-black">CHECK MORE</a>
            </span>
@@ -360,6 +380,30 @@ function App() {
            </span>
         </div>
       </div>
+
+      {/* Mobile Controls: Hidden on Desktop */}
+      <MobileControls 
+        onSearchSubmit={handleSearchSubmit}
+        isLoading={isLoading}
+        nodes={graphData.nodes}
+        links={graphData.links}
+        linkLimit={linkLimit}
+        onLinkLimitChange={setLinkLimit}
+        onClearAll={handleClearAll}
+        searchTerm={searchTerm}
+        onSearchTermChange={setSearchTerm}
+        showSubNodes={showSubNodes}
+        onToggleSubNodes={() => setShowSubNodes(!showSubNodes)}
+        onResetView={() => {
+            setResetViewTrigger(prev => prev + 1);
+            setFocusedNodeId(null);
+        }}
+        hoveredNodeId={hoveredNodeId}
+        focusedNodeId={focusedNodeId}
+        onHoverNode={setHoveredNodeId}
+        onFocusNode={setFocusedNodeId}
+        onDeleteNode={handleDeleteNode}
+      />
     </div>
   );
 }

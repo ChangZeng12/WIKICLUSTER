@@ -15,6 +15,7 @@ interface NetworkGraphProps {
   searchTerm?: string;
   showSubNodes?: boolean;
   resetViewTrigger?: number;
+  onInteraction?: () => void; // Callback to unlock camera on manual user interaction
 }
 
 export const NetworkGraph: React.FC<NetworkGraphProps> = ({ 
@@ -27,12 +28,25 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
   onNodeHover,
   searchTerm,
   showSubNodes = true,
-  resetViewTrigger = 0
+  resetViewTrigger = 0,
+  onInteraction
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const currentTransformRef = useRef<d3.ZoomTransform | null>(null);
   const isInitializedRef = useRef(false);
+  
+  // Refs to track latest state inside D3 closures
+  const hoveredNodeIdRef = useRef(hoveredNodeId);
+  const searchTermRef = useRef(searchTerm);
+
+  useEffect(() => {
+    hoveredNodeIdRef.current = hoveredNodeId;
+  }, [hoveredNodeId]);
+
+  useEffect(() => {
+    searchTermRef.current = searchTerm;
+  }, [searchTerm]);
   
   const [tooltipState, setTooltipState] = useState<{ x: number; y: number; content: string; visible: boolean }>({
     x: 0,
@@ -65,6 +79,9 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       // Check if clicked directly on SVG or a non-node element
       if (event.target === svg.node()) {
         onNodeClick(null);
+        // Also clear hover state and tooltip on background click (especially important for mobile)
+        if (onNodeHover) onNodeHover(null);
+        setTooltipState(prev => ({ ...prev, visible: false }));
       }
     });
 
@@ -75,12 +92,28 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
         g.attr("transform", event.transform);
         currentTransformRef.current = event.transform;
 
+        // CRITICAL: Detect user interaction to unlock camera
+        // event.sourceEvent is present for mouse/touch events, but null for programmatic transforms
+        if (event.sourceEvent && focusedNodeId && onInteraction) {
+           onInteraction();
+        }
+
         // Semantic Zoom: Adjust label visibility/size based on zoom level
         const k = event.transform.k;
+        
+        const isHighlighted = (id: string) => {
+             if (id === hoveredNodeIdRef.current) return true;
+             const term = searchTermRef.current;
+             if (term && id.toLowerCase().includes(term.toLowerCase())) return true;
+             return false;
+        };
+
         g.selectAll('.node-label')
           .attr('opacity', (d: any) => {
             if (d.group === 'main') return 1; 
-            return k > 1.2 ? 1 : 0; // Hide sub-node labels when zoomed out
+            if (k <= 1.2) return 0; // Hide sub-node labels when zoomed out
+            // Show at 50% opacity normally, 100% if hovered/highlighted
+            return isHighlighted(d.id) ? 1 : 0.5;
           })
           .attr('font-size', (d: any) => {
             const size = d.group === 'main' ? 12 : 10;
@@ -200,7 +233,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
         return `${size / initialK}px`;
       })
       .attr("dy", (d: WikiNode) => d.group === 'main' ? 14 + (10 / initialK) : 7 + (8 / initialK))
-      .attr("opacity", (d: WikiNode) => d.group === 'main' ? 1 : (initialK > 1.2 ? 1 : 0));
+      .attr("opacity", (d: WikiNode) => d.group === 'main' ? 1 : (initialK > 1.2 ? 0.5 : 0));
 
     // --- Event Listeners ---
     nodeGroup
@@ -219,6 +252,26 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
       })
       .on("click", (event, d: WikiNode) => {
           event.stopPropagation();
+          
+          // Mobile Logic: First tap = Hover/Tooltip, Second tap = Expand
+          const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+          
+          if (isMobile && d.group === 'sub') {
+             // If we are NOT already hovering this node (meaning it's the first tap)
+             // We use the Ref to check the current state since state updates are async
+             if (hoveredNodeIdRef.current !== d.id) {
+                 if (onNodeHover) onNodeHover(d.id);
+                 // Ensure tooltip is shown and positioned
+                 setTooltipState({
+                    x: event.clientX,
+                    y: event.clientY,
+                    content: d.id,
+                    visible: true
+                });
+                return; // Stop here, do not trigger onNodeClick (expand)
+             }
+          }
+
           onNodeClick(d);
       });
 
@@ -282,16 +335,53 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     }
   }, [resetViewTrigger, data, width, height, showSubNodes]);
 
-  // --- Focus Node Effect ---
+  // --- Focus Node Effect (Robust d3.timer tracking) ---
   useEffect(() => {
-    if (focusedNodeId && svgRef.current && zoomRef.current) {
-       const focusNode = data.nodes.find(n => n.id === focusedNodeId);
-       if (focusNode) {
-         const currentScale = currentTransformRef.current ? currentTransformRef.current.k : 0.6;
-         const targetScale = Math.max(currentScale, 0.6); // Don't zoom out too much, maintain at least 0.6
-         d3.select(svgRef.current).transition().duration(1000).call(zoomRef.current.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(targetScale).translate(-(focusNode.x || 0), -(focusNode.y || 0)));
-       }
-    }
+    if (!focusedNodeId || !svgRef.current || !zoomRef.current) return;
+    
+    // Using d3.timer creates a robust game-loop style tracking mechanism
+    // This allows us to track the node accurately even if the force simulation is moving it rapidly.
+    const timer = d3.timer(() => {
+        const node = data.nodes.find(n => n.id === focusedNodeId);
+        
+        // Safety check: if node disappears or positions are invalid, stop tracking
+        if (!node || node.x == null || node.y == null) {
+            return;
+        }
+        
+        const current = currentTransformRef.current || d3.zoomIdentity;
+        
+        // Calculate Target Transform
+        // We want the node at center: (width/2, height/2)
+        // Formula: Translate(Width/2, Height/2) -> Scale(k) -> Translate(-NodeX, -NodeY)
+        // Simplified identity arithmetic:
+        // tx = width/2 - node.x * k
+        // ty = height/2 - node.y * k
+        
+        // Target Scale: maintain current scale, but clamp to a minimum readability level (e.g. 0.8)
+        const targetK = Math.max(current.k, 0.8);
+        const targetX = width / 2 - node.x * targetK;
+        const targetY = height / 2 - node.y * targetK;
+        
+        // Linear Interpolation (Lerp) for Smooth Camera
+        // Factor 0.05 gives a nice heavy/smooth feel. Higher = Snappier.
+        const factor = 0.05; 
+        
+        const nextK = current.k + (targetK - current.k) * factor;
+        const nextX = current.x + (targetX - current.x) * factor;
+        const nextY = current.y + (targetY - current.y) * factor;
+        
+        // Construct new transform
+        const nextTransform = d3.zoomIdentity.translate(nextX, nextY).scale(nextK);
+        
+        // Apply without triggering standard d3 transitions to avoid conflict
+        if (zoomRef.current && svgRef.current) {
+            zoomRef.current.transform(d3.select(svgRef.current), nextTransform);
+        }
+    });
+    
+    // Cleanup: Stop the timer when component unmounts or focusedNodeId changes (e.g. becomes null)
+    return () => timer.stop();
   }, [focusedNodeId, data, width, height]);
 
   // --- Highlight/Hover Interactions (Without D3 re-render) ---
@@ -301,6 +391,9 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     const nodeCores = svg.selectAll<SVGCircleElement, WikiNode>(".node-core");
     const nodeRings = svg.selectAll<SVGCircleElement, WikiNode>(".node-ring");
     const links = svg.selectAll<SVGLineElement, WikiLink>(".links line");
+    const labels = svg.selectAll<SVGTextElement, WikiNode>(".node-label");
+
+    const currentK = currentTransformRef.current ? currentTransformRef.current.k : 0.5;
 
     const isMainConnection = (d: WikiLink) => {
         const s = d.source as WikiNode;
@@ -335,6 +428,14 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           const t = d.target as WikiNode;
           if (s.id === hoveredNodeId || t.id === hoveredNodeId) return 3;
           return isMainConnection(d) ? 2 : 0.5;
+      });
+
+    // Animate Labels (Opacity change on hover for sub-nodes)
+    labels.transition().duration(200)
+      .attr("opacity", (d: WikiNode) => {
+          if (d.group === 'main') return 1;
+          if (currentK <= 1.2) return 0;
+          return isNodeHighlighted(d.id) ? 1 : 0.5;
       });
   }, [hoveredNodeId, searchTerm]);
 
