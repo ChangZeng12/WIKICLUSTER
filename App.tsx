@@ -376,7 +376,7 @@ function App() {
               DESIGNED BY <a href="https://changz12.com/" target="_blank" rel="noopener noreferrer" className="underline pointer-events-auto hover:text-black">CHANG ZENG</a> WITH FIGMA AND GEMINI // <a href="https://changz12.com/" target="_blank" rel="noopener noreferrer" className="underline pointer-events-auto hover:text-black">CHECK MORE</a>
            </span>
            <span className="text-[8px] font-mono opacity-40 uppercase">
-              RENDERING: D3.JS FORCE LAYOUT // CLICK SUB-NODE TO EXPAND // USE SIDEBAR TO MANAGE
+              v1.12 // RENDERING: D3.JS FORCE LAYOUT // CLICK SUB-NODE TO EXPAND // USE SIDEBAR TO MANAGE
            </span>
         </div>
       </div>
